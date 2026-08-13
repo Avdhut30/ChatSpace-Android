@@ -180,7 +180,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun dismissAppUpdate() { mutable.value = mutable.value.copy(appUpdate = null) }
 
     private suspend fun fetchLatestAppUpdate(): AppUpdate? = withContext(Dispatchers.IO) {
-        val connection = URL("https://api.github.com/repos/Avdhut30/ChatSpace/releases/latest")
+        if (!BuildConfig.SELF_UPDATE_ENABLED) return@withContext null
+        val connection = URL("https://api.github.com/repos/Avdhut30/ChatSpace-Android/releases/latest")
             .openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "GET"

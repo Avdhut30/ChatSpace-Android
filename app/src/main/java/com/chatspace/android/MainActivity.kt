@@ -116,7 +116,7 @@ private val Muted = Color(0xFF707C87)
 private val Background = Color(0xFFF4F5F6)
 private val SoftBlue = Color(0xFFE6F4FA)
 private val ChatBackground = Color(0xFFDCE6E9)
-private const val APP_DOWNLOAD_URL = "https://github.com/Avdhut30/ChatSpace/releases/latest/download/ChatSpace.apk"
+private const val APP_DOWNLOAD_URL = "https://github.com/Avdhut30/ChatSpace-Android/releases/latest/download/ChatSpace.apk"
 
 @Composable private fun ChatSpaceTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
@@ -143,7 +143,7 @@ private const val APP_DOWNLOAD_URL = "https://github.com/Avdhut30/ChatSpace/rele
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
-    LaunchedEffect(Unit) { vm.checkForUpdates() }
+    LaunchedEffect(Unit) { if (BuildConfig.SELF_UPDATE_ENABLED) vm.checkForUpdates() }
     LaunchedEffect(state.signedIn) {
         if (state.signedIn && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -364,12 +364,14 @@ private const val APP_DOWNLOAD_URL = "https://github.com/Avdhut30/ChatSpace/rele
                             { menu = false; showAppQr = true },
                             leadingIcon = { Icon(Icons.Default.QrCode2, null) },
                         )
-                        DropdownMenuItem(
-                            { Text(if (state.checkingForUpdate) "Checking for updates…" else "Check for updates") },
-                            { menu = false; vm.checkForUpdates(manual = true) },
-                            enabled = !state.checkingForUpdate,
-                            leadingIcon = { Icon(Icons.Default.SystemUpdate, null) },
-                        )
+                        if (BuildConfig.SELF_UPDATE_ENABLED) {
+                            DropdownMenuItem(
+                                { Text(if (state.checkingForUpdate) "Checking for updates…" else "Check for updates") },
+                                { menu = false; vm.checkForUpdates(manual = true) },
+                                enabled = !state.checkingForUpdate,
+                                leadingIcon = { Icon(Icons.Default.SystemUpdate, null) },
+                            )
+                        }
                         DropdownMenuItem(
                             { Text("Link web device") },
                             {

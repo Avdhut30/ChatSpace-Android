@@ -4,6 +4,8 @@ Native Android client for the ChatSpace Supabase backend. It uses Kotlin,
 Jetpack Compose, Material 3, Supabase Auth/PostgREST/Storage, and the backend
 schema maintained in the main [ChatSpace repository](https://github.com/Avdhut30/ChatSpace/tree/main/supabase).
 
+Supported on Android 8.0 (API 26) and newer.
+
 ## Run
 
 1. Open this repository's root directory in Android Studio.
@@ -88,3 +90,12 @@ the APK into app-owned storage, and opens Android's package installer. Android
 requires the user to grant install permission once and confirm every update.
 Updates are never installed silently. You can also choose
 **Menu > Check for updates** at any time.
+
+## Production distribution
+
+Production builds are signed, non-debuggable, R8-optimized, HTTPS-only, and
+exclude authentication/session data from Android backup and device transfer.
+The `directRelease` APK supports GitHub updates. The `playRelease` App Bundle
+removes the install-packages permission for Google Play policy compatibility.
+See [RELEASING.md](RELEASING.md) for the permanent signing-key and protected
+GitHub Actions setup required before the first public production release.
