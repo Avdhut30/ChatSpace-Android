@@ -20,6 +20,7 @@ import com.chatspace.android.data.PresenceState
 import com.chatspace.android.data.TypingEvent
 import io.github.jan.supabase.auth.auth
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,7 +32,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import io.github.jan.supabase.realtime.PostgresAction
 import io.github.jan.supabase.realtime.RealtimeChannel
 import io.github.jan.supabase.realtime.broadcast
@@ -43,6 +47,28 @@ import io.github.jan.supabase.realtime.realtime
 import io.github.jan.supabase.realtime.track
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+
+data class AppUpdate(
+    val version: String,
+    val downloadUrl: String,
+    val releaseUrl: String,
+)
+
+@Serializable
+private data class GitHubRelease(
+    @SerialName("tag_name") val tagName: String,
+    @SerialName("html_url") val htmlUrl: String,
+    val assets: List<GitHubReleaseAsset> = emptyList(),
+)
+
+@Serializable
+private data class GitHubReleaseAsset(
+    val name: String,
+    @SerialName("browser_download_url") val downloadUrl: String,
+)
 
 data class ChatUiState(
     val booting: Boolean = true,
@@ -51,6 +77,8 @@ data class ChatUiState(
     val profile: Profile? = null,
     val rooms: List<Room> = emptyList(),
     val conversationPreferences: Map<String, ConversationPreference> = emptyMap(),
+    val appUpdate: AppUpdate? = null,
+    val checkingForUpdate: Boolean = false,
     val stories: List<Story> = emptyList(),
     val selectedRoom: Room? = null,
     val messages: List<Message> = emptyList(),
@@ -129,6 +157,62 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun signOut() = action { stopRefresh(); stopRealtime(); repo.signOut(); mutable.value = ChatUiState(booting = false) }
 
     fun refresh() = action { refreshAll() }
+    fun checkForUpdates(manual: Boolean = false) {
+        if (mutable.value.checkingForUpdate) return
+        viewModelScope.launch {
+            mutable.value = mutable.value.copy(checkingForUpdate = true)
+            runCatching { fetchLatestAppUpdate() }
+                .onSuccess { update ->
+                    mutable.value = mutable.value.copy(
+                        checkingForUpdate = false,
+                        appUpdate = update,
+                        notice = if (manual && update == null) "ChatSpace is up to date" else mutable.value.notice,
+                    )
+                }
+                .onFailure { error ->
+                    mutable.value = mutable.value.copy(
+                        checkingForUpdate = false,
+                        error = if (manual) error.message ?: "Could not check for updates" else mutable.value.error,
+                    )
+                }
+        }
+    }
+    fun dismissAppUpdate() { mutable.value = mutable.value.copy(appUpdate = null) }
+
+    private suspend fun fetchLatestAppUpdate(): AppUpdate? = withContext(Dispatchers.IO) {
+        val connection = URL("https://api.github.com/repos/Avdhut30/ChatSpace/releases/latest")
+            .openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 12_000
+            connection.readTimeout = 12_000
+            connection.setRequestProperty("Accept", "application/vnd.github+json")
+            connection.setRequestProperty("User-Agent", "ChatSpace-Android/${BuildConfig.VERSION_NAME}")
+            val status = connection.responseCode
+            if (status !in 200..299) error("Update service is unavailable ($status)")
+            val release = Json { ignoreUnknownKeys = true }.decodeFromString<GitHubRelease>(
+                connection.inputStream.bufferedReader().use { it.readText() }
+            )
+            val version = release.tagName.removePrefix("v")
+            val asset = release.assets.firstOrNull { it.name == "ChatSpace.apk" }
+                ?: return@withContext null
+            if (!isNewerVersion(version, BuildConfig.VERSION_NAME)) return@withContext null
+            AppUpdate(version, asset.downloadUrl, release.htmlUrl)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun isNewerVersion(candidate: String, current: String): Boolean {
+        val candidateParts = candidate.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
+        val currentParts = current.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
+        repeat(maxOf(candidateParts.size, currentParts.size)) { index ->
+            val candidatePart = candidateParts.getOrElse(index) { 0 }
+            val currentPart = currentParts.getOrElse(index) { 0 }
+            if (candidatePart != currentPart) return candidatePart > currentPart
+        }
+        return false
+    }
     fun approveWebLink(qrValue: String) = action("Web browser connected") {
         repo.approveWebLink(qrValue)
     }

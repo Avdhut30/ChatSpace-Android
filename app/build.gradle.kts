@@ -36,8 +36,8 @@ android {
         applicationId = "com.chatspace.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 14
-        versionName = "1.8.1"
+        versionCode = 15
+        versionName = "1.9.0"
         buildConfigField("String", "SUPABASE_URL", "\"${config("SUPABASE_URL", "https://example.supabase.co", "VITE_SUPABASE_URL")}\"")
         buildConfigField("String", "SUPABASE_KEY", "\"${config("SUPABASE_KEY", "configure-your-publishable-key", "VITE_SUPABASE_PUBLISHABLE_KEY")}\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${config("GOOGLE_WEB_CLIENT_ID", "", "VITE_GOOGLE_WEB_CLIENT_ID")}\"")

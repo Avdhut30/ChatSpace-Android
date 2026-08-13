@@ -51,6 +51,7 @@ receive that deep link using PKCE.
 - Multiple simultaneous 24-hour stories per user with broader phone media compatibility
 - Device-local message dates and times, clickable profiles, Auth avatar fallback, and resilient inline image previews
 - WhatsApp-style one-time QR login for linking the web app from a signed-in phone
+- GitHub release update checks with secure in-app APK download and Android installer handoff
 - Responsive Material 3 UI with loading, empty, and error states
 
 The Android client and web app share the same Supabase Auth users, RLS
@@ -78,3 +79,12 @@ before using this feature.
 
 Choose **Menu > Share app QR** to show a scannable download QR or share the
 permanent latest-release link with another Android device.
+
+## App updates
+
+ChatSpace checks the public GitHub release feed when it starts. When a newer
+`ChatSpace.apk` is available, the app offers an **Update now** action, downloads
+the APK into app-owned storage, and opens Android's package installer. Android
+requires the user to grant install permission once and confirm every update.
+Updates are never installed silently. You can also choose
+**Menu > Check for updates** at any time.

@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.os.Build
+import android.os.Environment
+import android.provider.Settings
 import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
@@ -67,6 +69,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import coil3.compose.AsyncImage
 import com.chatspace.android.data.Message
 import com.chatspace.android.data.ConversationPreference
@@ -80,6 +83,11 @@ import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import io.github.jan.supabase.auth.handleDeeplinks
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.security.MessageDigest
 import java.util.UUID
 import kotlin.math.roundToInt
@@ -135,6 +143,7 @@ private const val APP_DOWNLOAD_URL = "https://github.com/Avdhut30/ChatSpace/rele
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    LaunchedEffect(Unit) { vm.checkForUpdates() }
     LaunchedEffect(state.signedIn) {
         if (state.signedIn && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -152,6 +161,9 @@ private const val APP_DOWNLOAD_URL = "https://github.com/Avdhut30/ChatSpace/rele
         state.error?.takeUnless { it == "ROOM_LOCKED" || (state.signedIn && state.profile == null) }?.let { MessageBanner(it, true) }
         state.notice?.let { MessageBanner(it, false) }
         if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
+    }
+    state.appUpdate?.let { update ->
+        AppUpdateDialog(update, vm::dismissAppUpdate, vm::reportError)
     }
 }
 
@@ -353,6 +365,12 @@ private const val APP_DOWNLOAD_URL = "https://github.com/Avdhut30/ChatSpace/rele
                             leadingIcon = { Icon(Icons.Default.QrCode2, null) },
                         )
                         DropdownMenuItem(
+                            { Text(if (state.checkingForUpdate) "Checking for updates…" else "Check for updates") },
+                            { menu = false; vm.checkForUpdates(manual = true) },
+                            enabled = !state.checkingForUpdate,
+                            leadingIcon = { Icon(Icons.Default.SystemUpdate, null) },
+                        )
+                        DropdownMenuItem(
                             { Text("Link web device") },
                             {
                                 menu = false
@@ -523,6 +541,110 @@ private fun AppDownloadQrDialog(close: () -> Unit) {
             }
         },
         dismissButton = { TextButton(close) { Text("Close") } },
+    )
+}
+
+@Composable
+private fun AppUpdateDialog(update: AppUpdate, close: () -> Unit, reportError: (String) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var downloading by remember(update.version) { mutableStateOf(false) }
+
+    fun beginDownload() {
+        if (downloading) return
+        downloading = true
+        scope.launch {
+            runCatching { downloadUpdateApk(context, update) }
+                .onSuccess { apk ->
+                    downloading = false
+                    runCatching { openUpdateInstaller(context, apk) }
+                        .onFailure { reportError(it.message ?: "Could not open the Android installer") }
+                }
+                .onFailure { error ->
+                    downloading = false
+                    reportError(error.message ?: "Could not download the update")
+                }
+        }
+    }
+
+    val installPermission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()) {
+            beginDownload()
+        } else {
+            reportError("Allow ChatSpace to install updates, then tap Update now again")
+        }
+    }
+
+    fun requestUpdate() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
+            installPermission.launch(
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                    data = android.net.Uri.parse("package:${context.packageName}")
+                }
+            )
+        } else {
+            beginDownload()
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!downloading) close() },
+        icon = { Icon(Icons.Default.SystemUpdate, null, tint = MaterialTheme.colorScheme.primary) },
+        title = { Text("ChatSpace ${update.version} is available") },
+        text = {
+            Column {
+                Text("Download the latest version, then confirm the update in Android's installer. Your chats and app data will be preserved.")
+                if (downloading) {
+                    Spacer(Modifier.height(18.dp))
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text("Downloading update…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = ::requestUpdate, enabled = !downloading) {
+                Icon(Icons.Default.Download, null)
+                Spacer(Modifier.width(7.dp))
+                Text("Update now")
+            }
+        },
+        dismissButton = { TextButton(onClick = close, enabled = !downloading) { Text("Later") } },
+    )
+}
+
+private suspend fun downloadUpdateApk(context: Context, update: AppUpdate): File = withContext(Dispatchers.IO) {
+    val directory = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+        ?: error("Update storage is unavailable")
+    check(directory.exists() || directory.mkdirs()) { "Could not prepare update storage" }
+    val destination = File(directory, "ChatSpace-${update.version}.apk")
+    val connection = URL(update.downloadUrl).openConnection() as HttpURLConnection
+    try {
+        connection.instanceFollowRedirects = true
+        connection.connectTimeout = 20_000
+        connection.readTimeout = 60_000
+        connection.setRequestProperty("User-Agent", "ChatSpace-Android/${BuildConfig.VERSION_NAME}")
+        val status = connection.responseCode
+        if (status !in 200..299) error("Update download failed ($status)")
+        destination.outputStream().buffered().use { output ->
+            connection.inputStream.buffered().use { input -> input.copyTo(output) }
+        }
+        check(destination.length() > 0) { "The downloaded update is empty" }
+        destination
+    } catch (error: Throwable) {
+        destination.delete()
+        throw error
+    } finally {
+        connection.disconnect()
+    }
+}
+
+private fun openUpdateInstaller(context: Context, apk: File) {
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", apk)
+    context.startActivity(
+        Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
     )
 }
 
