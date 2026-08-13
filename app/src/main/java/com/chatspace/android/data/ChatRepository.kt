@@ -79,6 +79,19 @@ class ChatRepository(private val client: SupabaseClient) {
         limit(50)
     }.decodeList()
 
+    suspend fun profilesByPhoneContacts(phoneNumbers: List<String>): List<Profile> {
+        val uniqueNumbers = phoneNumbers.distinct().take(500)
+        if (uniqueNumbers.isEmpty()) return emptyList()
+        return client.postgrest.rpc(
+            "find_profiles_by_phone_contacts",
+            buildJsonObject {
+                put("contact_numbers", kotlinx.serialization.json.buildJsonArray {
+                    uniqueNumbers.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) }
+                })
+            },
+        ).decodeList()
+    }
+
     suspend fun rooms(): List<Room> {
         val uid = requireNotNull(userId)
         val memberships = client.from("room_members").select().decodeList<Membership>()

@@ -37,6 +37,7 @@ receive that deep link using PKCE.
 
 - Persistent email/password accounts, registration, native Google sign-in, sign out
 - Profile display name, unique username, and international mobile number
+- Optional phone-contact discovery that returns only registered ChatSpace profiles
 - Personal spaces, private direct messages, invite-only group creation
 - Supabase Realtime room/message/story updates, presence, and typing indicators
 - Message search, replies, edits, deletes, likes, and author identity
@@ -99,3 +100,11 @@ The `directRelease` APK supports GitHub updates. The `playRelease` App Bundle
 removes the install-packages permission for Google Play policy compatibility.
 See [RELEASING.md](RELEASING.md) for the permanent signing-key and protected
 GitHub Actions setup required before the first public production release.
+
+## Contact privacy
+
+ChatSpace asks for Contacts permission only after the user selects **Find from
+phone contacts**. Phone numbers are normalized locally and sent over HTTPS only
+for an exact registered-user match. The backend does not store submitted
+address-book numbers and returns only public profile fields. Requests are
+limited to 500 unique numbers and rate-limited per account.

@@ -9,6 +9,9 @@ import android.os.Bundle
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import android.provider.ContactsContract
+import android.telephony.PhoneNumberUtils
+import android.telephony.TelephonyManager
 import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
@@ -93,6 +96,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.Locale
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -898,7 +902,132 @@ private fun ContactProfileDialog(profile: Profile, close: () -> Unit) {
     if (showPhoto) FullProfilePhotoDialog(profile) { showPhoto = false }
 }
 
-@Composable private fun NewConversationDialog(state:ChatUiState,vm:ChatViewModel,close:()->Unit){var tab by remember{mutableIntStateOf(0)};var query by remember{mutableStateOf("")};var name by remember{mutableStateOf("")};var desc by remember{mutableStateOf("")};var selected by remember{mutableStateOf(setOf<String>())};LaunchedEffect(Unit){vm.loadPeople()};AlertDialog(close,title={Text("New conversation")},text={Column{TabRow(tab){Tab(tab==0,{tab=0}){Text("Direct",Modifier.padding(10.dp))};Tab(tab==1,{tab=1}){Text("Group",Modifier.padding(10.dp))}};if(tab==1){Field(name,{name=it},"Group name");Field(desc,{desc=it},"Description")};Field(query,{query=it;vm.loadPeople(it)},"Find by name or @username");LazyColumn(Modifier.heightIn(max=280.dp)){items(state.people){p->Row(Modifier.fillMaxWidth().clickable{if(tab==0){vm.direct(p.id);close()}else selected=if(p.id in selected)selected-p.id else selected+p.id}.padding(8.dp),verticalAlignment=Alignment.CenterVertically){Avatar(p,38.dp);Text("${p.name}  @${p.username}",Modifier.weight(1f).padding(8.dp));if(tab==1)Checkbox(p.id in selected,{})}}}}},confirmButton={if(tab==1)Button(onClick={vm.createGroup(name,desc,selected.toList());close()},enabled=name.isNotBlank()){Text("Create")}},dismissButton={TextButton(close){Text("Cancel")}})}
+@Composable
+private fun NewConversationDialog(state: ChatUiState, vm: ChatViewModel, close: () -> Unit) {
+    val context = LocalContext.current
+    var tab by remember { mutableIntStateOf(0) }
+    var query by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var desc by remember { mutableStateOf("") }
+    var selected by remember { mutableStateOf(setOf<String>()) }
+    var showingPhoneMatches by remember { mutableStateOf(false) }
+
+    fun findPhoneContacts() {
+        val phoneNumbers = readContactPhoneNumbers(context)
+        showingPhoneMatches = true
+        query = ""
+        vm.loadPhoneContacts(phoneNumbers)
+    }
+
+    val contactsPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) findPhoneContacts()
+        else vm.reportError("Contacts permission is needed to find people already on ChatSpace")
+    }
+
+    LaunchedEffect(Unit) { vm.loadPeople() }
+    AlertDialog(
+        onDismissRequest = close,
+        title = { Text("New conversation") },
+        text = {
+            Column {
+                TabRow(tab) {
+                    Tab(tab == 0, { tab = 0 }) { Text("Direct", Modifier.padding(10.dp)) }
+                    Tab(tab == 1, { tab = 1 }) { Text("Group", Modifier.padding(10.dp)) }
+                }
+                if (tab == 1) {
+                    Field(name, { name = it }, "Group name")
+                    Field(desc, { desc = it }, "Description")
+                }
+                Field(query, {
+                    query = it
+                    showingPhoneMatches = false
+                    vm.loadPeople(it)
+                }, "Find by name or @username")
+                if (tab == 0) {
+                    OutlinedButton(
+                        onClick = {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
+                                findPhoneContacts()
+                            } else {
+                                contactsPermission.launch(Manifest.permission.READ_CONTACTS)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.Contacts, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Find from phone contacts")
+                    }
+                    if (showingPhoneMatches) {
+                        Text(
+                            if (state.people.isEmpty()) "No registered ChatSpace contacts found" else "Contacts already on ChatSpace",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 8.dp),
+                        )
+                    }
+                }
+                LazyColumn(Modifier.heightIn(max = 280.dp)) {
+                    items(state.people) { person ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                if (tab == 0) {
+                                    vm.direct(person.id)
+                                    close()
+                                } else selected = if (person.id in selected) selected - person.id else selected + person.id
+                            }.padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Avatar(person, 38.dp)
+                            Text("${person.name}  @${person.username}", Modifier.weight(1f).padding(8.dp))
+                            if (tab == 1) Checkbox(person.id in selected, {})
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (tab == 1) Button(
+                onClick = { vm.createGroup(name, desc, selected.toList()); close() },
+                enabled = name.isNotBlank(),
+            ) { Text("Create") }
+        },
+        dismissButton = { TextButton(close) { Text("Cancel") } },
+    )
+}
+
+private fun readContactPhoneNumbers(context: Context): List<String> {
+    if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+        return emptyList()
+    }
+    val telephony = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+    val country = telephony?.networkCountryIso?.takeIf { it.isNotBlank() }
+        ?: telephony?.simCountryIso?.takeIf { it.isNotBlank() }
+        ?: Locale.getDefault().country
+    val result = linkedSetOf<String>()
+    val columns = arrayOf(
+        ContactsContract.CommonDataKinds.Phone.NUMBER,
+        ContactsContract.CommonDataKinds.Phone.NORMALIZED_NUMBER,
+    )
+    context.contentResolver.query(
+        ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+        columns,
+        null,
+        null,
+        null,
+    )?.use { cursor ->
+        val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+        val normalizedIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NORMALIZED_NUMBER)
+        while (cursor.moveToNext() && result.size < 500) {
+            val normalized = normalizedIndex.takeIf { it >= 0 }?.let(cursor::getString)
+            val raw = numberIndex.takeIf { it >= 0 }?.let(cursor::getString).orEmpty()
+            val e164 = normalized?.takeIf { it.matches(Regex("^\\+[1-9][0-9]{7,14}$")) }
+                ?: PhoneNumberUtils.formatNumberToE164(raw, country.uppercase(Locale.ROOT))
+            if (e164?.matches(Regex("^\\+[1-9][0-9]{7,14}$")) == true) result += e164
+        }
+    }
+    return result.toList()
+}
 
 @Composable private fun ProfileDialog(profile:Profile?,vm:ChatViewModel,close:()->Unit){if(profile==null)return;var name by remember{mutableStateOf(profile.name)};var username by remember{mutableStateOf(profile.username)};var phone by remember{mutableStateOf(profile.phoneNumber?:"")};AlertDialog(close,title={Text("Your profile")},text={Column{Avatar(profile,72.dp);Field(name,{name=it},"Display name");Field(username,{username=it},"Username");Field(phone,{phone=it},"Mobile number")}},confirmButton={Button({vm.saveProfile(name,username,phone);close()}){Text("Save")}},dismissButton={TextButton(close){Text("Cancel")}})}
 @Composable private fun StoryDialog(vm:ChatViewModel,close:()->Unit){var text by remember{mutableStateOf("")};var color by remember{mutableStateOf("#2563EB")};AlertDialog(close,title={Text("Add a 24-hour story")},text={Column{Field(text,{text=it},"What’s happening?");Row{listOf("#2563EB","#7C3AED","#DB2777","#059669").forEach{c->Box(Modifier.padding(5.dp).size(38.dp).clip(CircleShape).background(Color(android.graphics.Color.parseColor(c))).clickable{color=c})}}}},confirmButton={Button({vm.addStory(text,color);close()},enabled=text.isNotBlank()){Text("Publish")}},dismissButton={TextButton(close){Text("Cancel")}})}
