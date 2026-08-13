@@ -190,6 +190,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             connection.setRequestProperty("Accept", "application/vnd.github+json")
             connection.setRequestProperty("User-Agent", "ChatSpace-Android/${BuildConfig.VERSION_NAME}")
             val status = connection.responseCode
+            if (status == HttpURLConnection.HTTP_NOT_FOUND) return@withContext null
             if (status !in 200..299) error("Update service is unavailable ($status)")
             val release = Json { ignoreUnknownKeys = true }.decodeFromString<GitHubRelease>(
                 connection.inputStream.bufferedReader().use { it.readText() }
