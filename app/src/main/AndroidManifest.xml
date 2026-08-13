@@ -3,12 +3,14 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application
         android:name=".ChatSpaceApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
         android:icon="@drawable/ic_chatspace"
         android:label="ChatSpace"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.ChatSpace"
         android:usesCleartextTraffic="false">
         <meta-data

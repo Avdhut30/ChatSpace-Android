@@ -22,6 +22,7 @@ val webEnvironment = Properties().apply {
         if (separator > 0) setProperty(line.substring(0, separator).trim(), line.substring(separator + 1).trim())
     }
 }
+val isReleaseBuild = gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) }
 fun config(name: String, fallback: String, webName: String? = null) =
     (localProperties.getProperty(name) ?: System.getenv(name)
         ?: webName?.let(webEnvironment::getProperty)
@@ -33,18 +34,66 @@ android {
     compileSdk = 36
 
     defaultConfig {
+        val supabaseUrl = config("SUPABASE_URL", "https://example.supabase.co", "VITE_SUPABASE_URL")
+        val supabaseKey = config("SUPABASE_KEY", "configure-your-publishable-key", "VITE_SUPABASE_PUBLISHABLE_KEY")
+        if (isReleaseBuild) {
+            require(supabaseUrl.startsWith("https://") && !supabaseUrl.contains("example.supabase.co")) {
+                "A production SUPABASE_URL is required for release builds."
+            }
+            require(supabaseKey.isNotBlank() && supabaseKey != "configure-your-publishable-key") {
+                "A Supabase publishable key is required for release builds."
+            }
+        }
         applicationId = "com.chatspace.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 15
-        versionName = "1.9.0"
-        buildConfigField("String", "SUPABASE_URL", "\"${config("SUPABASE_URL", "https://example.supabase.co", "VITE_SUPABASE_URL")}\"")
-        buildConfigField("String", "SUPABASE_KEY", "\"${config("SUPABASE_KEY", "configure-your-publishable-key", "VITE_SUPABASE_PUBLISHABLE_KEY")}\"")
+        versionCode = 16
+        versionName = "2.0.0"
+        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField("String", "SUPABASE_KEY", "\"$supabaseKey\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${config("GOOGLE_WEB_CLIENT_ID", "", "VITE_GOOGLE_WEB_CLIENT_ID")}\"")
         buildConfigField("String", "FIREBASE_APPLICATION_ID", "\"${config("FIREBASE_APPLICATION_ID", "")}\"")
         buildConfigField("String", "FIREBASE_API_KEY", "\"${config("FIREBASE_API_KEY", "")}\"")
         buildConfigField("String", "FIREBASE_PROJECT_ID", "\"${config("FIREBASE_PROJECT_ID", "")}\"")
         buildConfigField("String", "FIREBASE_SENDER_ID", "\"${config("FIREBASE_SENDER_ID", "")}\"")
+    }
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("direct") {
+            dimension = "distribution"
+            buildConfigField("boolean", "SELF_UPDATE_ENABLED", "true")
+        }
+        create("play") {
+            dimension = "distribution"
+            buildConfigField("boolean", "SELF_UPDATE_ENABLED", "false")
+        }
+    }
+    signingConfigs {
+        val storePath = System.getenv("ANDROID_KEYSTORE_PATH")
+        val storePasswordValue = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+        val keyAliasValue = System.getenv("ANDROID_KEY_ALIAS")
+        val keyPasswordValue = System.getenv("ANDROID_KEY_PASSWORD")
+        if (!storePath.isNullOrBlank() && !storePasswordValue.isNullOrBlank() &&
+            !keyAliasValue.isNullOrBlank() && !keyPasswordValue.isNullOrBlank()
+        ) {
+            create("release") {
+                storeFile = file(storePath)
+                storePassword = storePasswordValue
+                keyAlias = keyAliasValue
+                keyPassword = keyPasswordValue
+            }
+        } else if (isReleaseBuild) {
+            error("Release signing is not configured. Set ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, and ANDROID_KEY_PASSWORD.")
+        }
+    }
+    buildTypes {
+        release {
+            isDebuggable = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release")
+        }
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }

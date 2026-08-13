@@ -23,6 +23,9 @@ import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -116,7 +119,7 @@ private val Muted = Color(0xFF707C87)
 private val Background = Color(0xFFF4F5F6)
 private val SoftBlue = Color(0xFFE6F4FA)
 private val ChatBackground = Color(0xFFDCE6E9)
-private const val APP_DOWNLOAD_URL = "https://github.com/Avdhut30/ChatSpace/releases/latest/download/ChatSpace.apk"
+private const val APP_DOWNLOAD_URL = "https://github.com/Avdhut30/ChatSpace-Android/releases/latest/download/ChatSpace.apk"
 
 @Composable private fun ChatSpaceTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
@@ -143,7 +146,7 @@ private const val APP_DOWNLOAD_URL = "https://github.com/Avdhut30/ChatSpace/rele
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
-    LaunchedEffect(Unit) { vm.checkForUpdates() }
+    LaunchedEffect(Unit) { if (BuildConfig.SELF_UPDATE_ENABLED) vm.checkForUpdates() }
     LaunchedEffect(state.signedIn) {
         if (state.signedIn && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -364,12 +367,14 @@ private const val APP_DOWNLOAD_URL = "https://github.com/Avdhut30/ChatSpace/rele
                             { menu = false; showAppQr = true },
                             leadingIcon = { Icon(Icons.Default.QrCode2, null) },
                         )
-                        DropdownMenuItem(
-                            { Text(if (state.checkingForUpdate) "Checking for updates…" else "Check for updates") },
-                            { menu = false; vm.checkForUpdates(manual = true) },
-                            enabled = !state.checkingForUpdate,
-                            leadingIcon = { Icon(Icons.Default.SystemUpdate, null) },
-                        )
+                        if (BuildConfig.SELF_UPDATE_ENABLED) {
+                            DropdownMenuItem(
+                                { Text(if (state.checkingForUpdate) "Checking for updates…" else "Check for updates") },
+                                { menu = false; vm.checkForUpdates(manual = true) },
+                                enabled = !state.checkingForUpdate,
+                                leadingIcon = { Icon(Icons.Default.SystemUpdate, null) },
+                            )
+                        }
                         DropdownMenuItem(
                             { Text("Link web device") },
                             {
@@ -1006,6 +1011,16 @@ private fun StoryViewer(
     delete: () -> Unit,
 ) {
     val background = runCatching { Color(android.graphics.Color.parseColor(story.backgroundColor)) }.getOrDefault(Blue)
+    val storyProgress = remember(story.id) { Animatable(0f) }
+    val timeoutAction by rememberUpdatedState(next ?: close)
+    LaunchedEffect(story.id) {
+        storyProgress.snapTo(0f)
+        storyProgress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 15_000, easing = LinearEasing),
+        )
+        timeoutAction()
+    }
     Dialog(close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             when {
@@ -1022,17 +1037,23 @@ private fun StoryViewer(
                 Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 5.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                stories.forEachIndexed { index, item ->
+                stories.forEachIndexed { index, _ ->
                     Box(
-                        Modifier.weight(1f).height(3.dp).clip(RoundedCornerShape(2.dp)).background(
-                            if (index <= selectedIndex) Color.White else Color.White.copy(alpha = .35f)
-                        )
-                    )
+                        Modifier.weight(1f).height(3.dp).clip(RoundedCornerShape(2.dp))
+                            .background(Color.White.copy(alpha = .35f))
+                    ) {
+                        val progress = when {
+                            index < selectedIndex -> 1f
+                            index == selectedIndex -> storyProgress.value
+                            else -> 0f
+                        }
+                        Box(Modifier.fillMaxHeight().fillMaxWidth(progress.coerceIn(0f, 1f)).background(Color.White))
+                    }
                 }
             }
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Avatar(Profile(story.authorId, story.authorName, story.authorAvatar), 40.dp, true)
-                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) { Text(story.authorName, color = Color.White, fontWeight = FontWeight.Bold); Text("24-hour story", color = Color.White.copy(alpha = .7f), fontSize = 11.sp) }
+                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) { Text(story.authorName, color = Color.White, fontWeight = FontWeight.Bold); Text("15-second story", color = Color.White.copy(alpha = .7f), fontSize = 11.sp) }
                 if (story.authorId == myId) IconButton(delete) { Icon(Icons.Default.Delete, "Delete", tint = Color.White) }
                 IconButton(close) { Icon(Icons.Default.Close, "Close", tint = Color.White) }
             }
