@@ -36,6 +36,7 @@ android {
     defaultConfig {
         val supabaseUrl = config("SUPABASE_URL", "https://example.supabase.co", "VITE_SUPABASE_URL")
         val supabaseKey = config("SUPABASE_KEY", "configure-your-publishable-key", "VITE_SUPABASE_PUBLISHABLE_KEY")
+        val googleWebClientId = config("GOOGLE_WEB_CLIENT_ID", "", "VITE_GOOGLE_WEB_CLIENT_ID")
         if (isReleaseBuild) {
             require(supabaseUrl.startsWith("https://") && !supabaseUrl.contains("example.supabase.co")) {
                 "A production SUPABASE_URL is required for release builds."
@@ -43,15 +44,18 @@ android {
             require(supabaseKey.isNotBlank() && supabaseKey != "configure-your-publishable-key") {
                 "A Supabase publishable key is required for release builds."
             }
+            require(googleWebClientId.endsWith(".apps.googleusercontent.com")) {
+                "A valid GOOGLE_WEB_CLIENT_ID is required for release builds."
+            }
         }
         applicationId = "com.chatspace.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 20
-        versionName = "2.1.3"
+        versionCode = 21
+        versionName = "2.1.4"
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_KEY", "\"$supabaseKey\"")
-        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${config("GOOGLE_WEB_CLIENT_ID", "", "VITE_GOOGLE_WEB_CLIENT_ID")}\"")
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleWebClientId\"")
         buildConfigField("String", "FIREBASE_APPLICATION_ID", "\"${config("FIREBASE_APPLICATION_ID", "")}\"")
         buildConfigField("String", "FIREBASE_API_KEY", "\"${config("FIREBASE_API_KEY", "")}\"")
         buildConfigField("String", "FIREBASE_PROJECT_ID", "\"${config("FIREBASE_PROJECT_ID", "")}\"")
