@@ -33,6 +33,17 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           grep -F "versionName = \"$version\"" app/build.gradle.kts
 
+      - name: Validate Google authentication config
+        shell: bash
+        env:
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+        run: |
+          test -n "$GOOGLE_WEB_CLIENT_ID"
+          case "$GOOGLE_WEB_CLIENT_ID" in
+            *.apps.googleusercontent.com) ;;
+            *) echo "GOOGLE_WEB_CLIENT_ID is not a valid Web OAuth client ID" >&2; exit 1 ;;
+          esac
+
       - name: Restore release keystore
         shell: bash
         env:

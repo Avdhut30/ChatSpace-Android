@@ -289,7 +289,7 @@ private const val APP_DOWNLOAD_URL = "https://github.com/Avdhut30/ChatSpace-Andr
     OutlinedButton(
         onClick = {
             if (BuildConfig.GOOGLE_WEB_CLIENT_ID.isBlank()) {
-                reportError("Google Sign-In is not configured. Add GOOGLE_WEB_CLIENT_ID to android/local.properties.")
+                reportError("Google Sign-In is unavailable in this build. Update ChatSpace and try again.")
                 return@OutlinedButton
             }
             scope.launch {
