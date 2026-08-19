@@ -5,6 +5,7 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.providers.builtin.IDToken
+import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
@@ -15,7 +16,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.time.Duration.Companion.seconds
 import android.os.Build
@@ -52,11 +55,33 @@ class ChatRepository(private val client: SupabaseClient) {
         val sessionId = uri.getQueryParameter("session").orEmpty()
         val secret = uri.getQueryParameter("secret").orEmpty()
         require(sessionId.matches(Regex("^[0-9a-fA-F-]{36}$")) && secret.length >= 32) { "This QR code is invalid" }
-        client.functions.invoke(
-            "device-link",
-            DeviceLinkApproval(sessionId = sessionId, approvalSecret = secret),
-            headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
-        )
+
+        client.auth.awaitInitialization()
+        client.auth.refreshCurrentSession()
+        requireNotNull(client.auth.currentSessionOrNull()?.accessToken) {
+            "Your login session expired. Sign in again."
+        }
+        try {
+            client.functions.invoke(
+                "device-link",
+                DeviceLinkApproval(action = "approve", sessionId = sessionId, approvalSecret = secret),
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        } catch (error: RestException) {
+            val serverMessage = runCatching {
+                Json.parseToJsonElement(error.error)
+                    .jsonObject["error"]?.jsonPrimitive?.contentOrNull
+            }.getOrNull()
+            throw IllegalStateException(
+                serverMessage ?: when (error.statusCode) {
+                    401 -> "Your phone session expired. Sign in again."
+                    403 -> "This QR code is not valid for this session."
+                    409 -> "This QR code was already used. Create a new one."
+                    410 -> "This QR code expired. Create a new one."
+                    else -> "Web linking failed. Create a new QR code and retry."
+                }
+            )
+        }
     }
 
     suspend fun profile(): Profile {

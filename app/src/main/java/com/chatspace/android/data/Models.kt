@@ -102,4 +102,4 @@ data class Story(
 @Serializable data class RoomAccess(@SerialName("hasPassword") val hasPassword: Boolean = false, val unlocked: Boolean = true, @SerialName("unlockedUntil") val unlockedUntil: String? = null)
 @Serializable data class IdentityUpdate(@SerialName("new_name") val name: String, @SerialName("new_username") val username: String, @SerialName("new_phone_number") val phone: String? = null)
 @Serializable data class PushToken(val token: String, @SerialName("user_id") val userId: String, val platform: String = "android", @SerialName("device_name") val deviceName: String? = null)
-@Serializable data class DeviceLinkApproval(val action: String = "approve", @SerialName("session_id") val sessionId: String, @SerialName("approval_secret") val approvalSecret: String)
+@Serializable data class DeviceLinkApproval(val action: String, @SerialName("session_id") val sessionId: String, @SerialName("approval_secret") val approvalSecret: String)
